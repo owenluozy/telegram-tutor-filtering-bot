@@ -15,6 +15,7 @@ TELEGRAM_API_ID = int(os.environ["TELEGRAM_API_ID"])
 TELEGRAM_API_HASH = os.environ["TELEGRAM_API_HASH"]
 GMAPS_API_KEY = os.environ["GMAPS_API_KEY"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+ORIGINS = [o.strip() for o in os.environ["ORIGINS"].split(";")]
 
 TARGET_CHANNELS = ['TutorSociety']
 
@@ -68,35 +69,39 @@ def parse_listing_with_ai(message_text):
 
 def next_weekday_5pm():
     d = datetime.now() + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
     return d.replace(hour=17, minute=0, second=0, microsecond=0)
 
 @lru_cache(maxsize=512)
+def _travel_time_ok(postal_code):
+    """ Real Maps call. Errors are raised, so theya re never cached."""
+    destination = f"Singapore {postal_code}"
+    matrix = gmaps.distance_matrix(
+        origins= ORIGINS,
+        destinations = [destination],
+        mode="transit",
+        departure_time=next_weekday_5pm()
+    )
+    for row in matrix['rows']:
+        element = row['elements'][0]
+        if element.get('status') == 'OK':
+            duration_seconds = element['duration']['value']
+            if duration_seconds <= MAX_TRAVEL_SECONDS:
+                return True
+    return False
+
 def check_travel_time(postal_code):
-    """Checks if public transit is < 45 mins from [location]"""
+    """Checks if public transit is within MAX_TRAVEL_SECONDS of any origin."""
     if not postal_code:
         return False
-        
-    destination = f"Singapore {postal_code}"
-    ORIGINS = os.environ["ORIGINS"].split(";")
-    
     try:
-        matrix = gmaps.distance_matrix(
-            origins=ORIGINS,
-            destinations=[destination],
-            mode="transit",
-            departure_time=next_weekday_5pm()
-        )
-        
-        for row in matrix['rows']:
-            element = row['elements'][0]
-            if element.get('status') == 'OK':
-                duration_seconds = element['duration']['value']
-                if duration_seconds <= MAX_TRAVEL_SECONDS: 
-                    return True
+        return _travel_time_ok(postal_code)
     except Exception as e:
         print(f"Maps API Error: {e}")
-        
-    return False
+        return False
+    destination = f"Singapore {postal_code}"
+
 
 
 def meets_your_criteria(data):
