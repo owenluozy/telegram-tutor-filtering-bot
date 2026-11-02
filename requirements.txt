@@ -1,0 +1,4 @@
+google-genai==2.19.0
+googlemaps==4.10.0
+python-dotenv==1.2.4
+Telethon==1.44.0
